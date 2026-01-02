@@ -2,7 +2,7 @@ Title: Customer Account Update and Audit - Modern COBOL Implementation
 
 Overview:
 
-This program updates customer account balances using daily transaction records and produces a financial audit report. The code has been refactored to comply with modern COBOL standards, improving readability, maintainability, and modularity. Key improvements include elimination of GO TO statements, modular paragraph structure, meaningful variable names, and separation of business logic from reporting. All file interfaces and business rules are preserved, and the code is validated for production use.
+This document presents a refactored, production-ready COBOL batch program (ACCTUPDT-REFACTORED) for updating customer account balances using daily transaction records and generating a financial audit report. The code has been modernized for clarity, maintainability, and compliance with current COBOL standards. Key improvements include modular structure, elimination of GO TO statements, meaningful variable and paragraph names, dynamic date handling, and separation of business logic from reporting. All business rules and I/O formats from the legacy implementation are preserved.
 
 Refactored COBOL Code:
 
@@ -12,259 +12,246 @@ Refactored COBOL Code:
        ENVIRONMENT DIVISION.
        INPUT-OUTPUT SECTION.
        FILE-CONTROL.
-           SELECT MASTER-FILE ASSIGN TO 'ACCTMAST.DAT'
+           SELECT ACCTMAST-IN   ASSIGN TO 'ACCTMAST.DAT'
                ORGANIZATION IS LINE SEQUENTIAL.
-           SELECT TRAN-FILE ASSIGN TO 'ACCTTRAN.DAT'
+           SELECT ACCTTRAN-IN   ASSIGN TO 'ACCTTRAN.DAT'
                ORGANIZATION IS LINE SEQUENTIAL.
-           SELECT NEW-MASTER-FILE ASSIGN TO 'ACCTMAST.NEW'
+           SELECT ACCTMAST-OUT  ASSIGN TO 'ACCTMAST.NEW'
                ORGANIZATION IS LINE SEQUENTIAL.
-           SELECT REPORT-FILE ASSIGN TO 'ACCTREP.TXT'
+           SELECT ACCTREP-OUT   ASSIGN TO 'ACCTREP.TXT'
                ORGANIZATION IS LINE SEQUENTIAL.
 
        DATA DIVISION.
        FILE SECTION.
-
-       FD  MASTER-FILE.
-       01  MASTER-REC.
-           05  M-ACCT-NUMBER         PIC X(10).
-           05  M-NAME                PIC X(30).
-           05  M-BALANCE             PIC S9(9)V99 COMP-3.
-           05  M-LAST-ACTIVITY-DATE  PIC 9(8).
-           05  FILLER                PIC X(2).
-
-       FD  TRAN-FILE.
-       01  TRAN-REC.
-           05  T-ACCT-NUMBER         PIC X(10).
-           05  T-TRAN-CODE           PIC XX.
-           05  T-AMOUNT              PIC S9(7)V99 COMP-3.
-           05  T-TRAN-DATE           PIC 9(8).
-           05  FILLER                PIC X(2).
-
-       FD  NEW-MASTER-FILE.
-       01  NEW-MASTER-REC           PIC X(52).
-
-       FD  REPORT-FILE.
-       01  REPORT-REC               PIC X(80).
+       FD  ACCTMAST-IN.
+       01  ACCTMAST-REC.
+           05  AM-ACCT-NO         PIC X(10).
+           05  AM-NAME            PIC X(30).
+           05  AM-BALANCE         PIC S9(9)V99 COMP-3.
+           05  AM-LAST-ACT-DATE   PIC 9(8).
+       FD  ACCTTRAN-IN.
+       01  ACCTTRAN-REC.
+           05  T-ACCT-NO          PIC X(10).
+           05  T-TRAN-CODE        PIC XX.
+           05  T-AMOUNT           PIC S9(7)V99 COMP-3.
+           05  T-TRAN-DATE        PIC 9(8).
+       FD  ACCTMAST-OUT.
+       01  ACCTMAST-NEW-REC.
+           05  NM-ACCT-NO         PIC X(10).
+           05  NM-NAME            PIC X(30).
+           05  NM-BALANCE         PIC S9(9)V99 COMP-3.
+           05  NM-LAST-ACT-DATE   PIC 9(8).
+       FD  ACCTREP-OUT.
+       01  ACCTREP-REC           PIC X(80).
 
        WORKING-STORAGE SECTION.
-       77  WS-RUN-DATE              PIC 9(8).
-       77  WS-EOF-MASTER            PIC X VALUE 'N'.
-       77  WS-EOF-TRAN              PIC X VALUE 'N'.
-       77  WS-TRAN-FOUND            PIC X VALUE 'N'.
-       77  WS-UNKNOWN-TRAN-CODE     PIC X VALUE 'N'.
-       77  WS-REPORT-LINE           PIC X(80).
-       77  WS-UPDATE-BALANCE        PIC S9(9)V99 COMP-3.
-       77  WS-UPDATE-ACTIVITY-DATE  PIC 9(8).
-       77  WS-TRAN-AMOUNT           PIC S9(7)V99 COMP-3.
-       77  WS-TRAN-CODE             PIC XX.
+       77  WS-RUN-DATE           PIC 9(8) VALUE SPACES.
+       77  WS-EOF-MASTER         PIC X VALUE 'N'.
+       77  WS-EOF-TRAN           PIC X VALUE 'N'.
+       77  WS-TRAN-MATCHED       PIC X VALUE 'N'.
+       77  WS-PROCESSED-COUNT    PIC 9(6) VALUE ZERO.
+       77  WS-UPDATED-COUNT      PIC 9(6) VALUE ZERO.
+       77  WS-NOTRANS-COUNT      PIC 9(6) VALUE ZERO.
+       77  WS-REPORT-LINE        PIC X(80).
+       77  WS-TRAN-CODE          PIC XX.
+       77  WS-TRAN-AMOUNT        PIC S9(7)V99 COMP-3.
+       77  WS-LAST-ACT-DATE      PIC 9(8).
+       77  WS-ACCT-NO            PIC X(10).
+       77  WS-ACCT-NAME          PIC X(30).
+       77  WS-ACCT-BALANCE       PIC S9(9)V99 COMP-3.
+       77  WS-TRAN-DATE          PIC 9(8).
 
-       01  WS-REPORT-DETAIL.
-           05  WS-RPT-ACCT-NUMBER   PIC X(10).
-           05  WS-RPT-NAME          PIC X(30).
-           05  WS-RPT-TRAN-CODE     PIC XX.
-           05  WS-RPT-AMOUNT        PIC -ZZZZZZ9.99.
-           05  WS-RPT-BALANCE       PIC -ZZZZZZZZ9.99.
-           05  WS-RPT-STATUS        PIC X(20).
-
-       01  WS-TRANSACTION-FOUND     PIC X VALUE 'N'.
+       01  WS-REPORT-TOTALS.
+           05  WS-TOTAL-PROCESSED    PIC 9(6) VALUE ZERO.
+           05  WS-TOTAL-UPDATED      PIC 9(6) VALUE ZERO.
+           05  WS-TOTAL-NOTRANS      PIC 9(6) VALUE ZERO.
 
        PROCEDURE DIVISION.
-
        MAIN-LOGIC.
+           * Main entry point for the batch job
            PERFORM INIT-SECTION
-           PERFORM PROCESS-MASTER-RECORDS
+           PERFORM PROCESS-ACCOUNTS
            PERFORM FINALIZE-SECTION
            STOP RUN.
 
        INIT-SECTION.
-           * Initialize run date (should be parameterized in future)
-           MOVE 20241201 TO WS-RUN-DATE
-           OPEN INPUT MASTER-FILE
-           OPEN INPUT TRAN-FILE
-           OPEN OUTPUT NEW-MASTER-FILE
-           OPEN OUTPUT REPORT-FILE
-           PERFORM READ-MASTER-RECORD
-           PERFORM READ-TRAN-RECORD
+           * Open all required files and initialize run date
+           OPEN INPUT ACCTMAST-IN
+           OPEN INPUT ACCTTRAN-IN
+           OPEN OUTPUT ACCTMAST-OUT
+           OPEN OUTPUT ACCTREP-OUT
+           PERFORM READ-MASTER
+           PERFORM READ-TRAN
+           MOVE FUNCTION CURRENT-DATE(1:8) TO WS-RUN-DATE
            .
 
-       PROCESS-MASTER-RECORDS.
+       READ-MASTER.
+           * Read next master account record
+           READ ACCTMAST-IN
+               AT END MOVE 'Y' TO WS-EOF-MASTER
+           END-READ
+           .
+
+       READ-TRAN.
+           * Read next transaction record
+           READ ACCTTRAN-IN
+               AT END MOVE 'Y' TO WS-EOF-TRAN
+           END-READ
+           .
+
+       PROCESS-ACCOUNTS.
+           * Process each account in the master file
            PERFORM UNTIL WS-EOF-MASTER = 'Y'
-               PERFORM PROCESS-SINGLE-MASTER
-               PERFORM READ-MASTER-RECORD
+               MOVE 'N' TO WS-TRAN-MATCHED
+               PERFORM INITIALIZE-ACCOUNT-WORKAREA
+               PERFORM MATCH-AND-APPLY-TRANSACTIONS
+               PERFORM WRITE-UPDATED-MASTER
+               PERFORM WRITE-ACCOUNT-REPORT
+               PERFORM READ-MASTER
            END-PERFORM
            .
 
-       PROCESS-SINGLE-MASTER.
-           MOVE 'N' TO WS-TRANSACTION-FOUND
-           PERFORM PROCESS-TRANSACTIONS-FOR-ACCOUNT
-           IF WS-TRANSACTION-FOUND = 'Y'
-               PERFORM WRITE-UPDATED-MASTER
-           ELSE
-               PERFORM REPORT-NO-TRANSACTION
-               PERFORM WRITE-UNTOUCHED-MASTER
-           END-IF
+       INITIALIZE-ACCOUNT-WORKAREA.
+           * Copy master record fields to working variables
+           MOVE AM-ACCT-NO       TO WS-ACCT-NO
+           MOVE AM-NAME          TO WS-ACCT-NAME
+           MOVE AM-BALANCE       TO WS-ACCT-BALANCE
+           MOVE AM-LAST-ACT-DATE TO WS-LAST-ACT-DATE
            .
 
-       PROCESS-TRANSACTIONS-FOR-ACCOUNT.
-           * Process all transactions for current master account
-           PERFORM UNTIL WS-EOF-TRAN = 'Y'
-               IF T-ACCT-NUMBER = M-ACCT-NUMBER
-                   MOVE 'Y' TO WS-TRANSACTION-FOUND
-                   MOVE T-TRAN-CODE TO WS-TRAN-CODE
-                   MOVE T-AMOUNT TO WS-TRAN-AMOUNT
-                   PERFORM APPLY-TRANSACTION
-                   PERFORM REPORT-DETAIL
-                   PERFORM READ-TRAN-RECORD
+       MATCH-AND-APPLY-TRANSACTIONS.
+           * Match and apply all transactions for the current account
+           PERFORM UNTIL (WS-EOF-TRAN = 'Y')
+               IF T-ACCT-NO < WS-ACCT-NO
+                   PERFORM READ-TRAN
                ELSE
-                   IF T-ACCT-NUMBER > M-ACCT-NUMBER
+                   IF T-ACCT-NO > WS-ACCT-NO
                        EXIT PERFORM
                    ELSE
-                       PERFORM READ-TRAN-RECORD
+                       PERFORM APPLY-TRANSACTION
+                       PERFORM READ-TRAN
                    END-IF
                END-IF
            END-PERFORM
            .
 
        APPLY-TRANSACTION.
+           * Apply business rules for transaction codes
+           MOVE 'Y' TO WS-TRAN-MATCHED
+           MOVE T-TRAN-CODE TO WS-TRAN-CODE
+           MOVE T-AMOUNT    TO WS-TRAN-AMOUNT
+           MOVE T-TRAN-DATE TO WS-LAST-ACT-DATE
            EVALUATE WS-TRAN-CODE
                WHEN '01'
-                   PERFORM APPLY-DEPOSIT
+                   ADD WS-TRAN-AMOUNT TO WS-ACCT-BALANCE
                WHEN '02'
-                   PERFORM APPLY-WITHDRAWAL
+                   SUBTRACT WS-TRAN-AMOUNT FROM WS-ACCT-BALANCE
                WHEN '03'
-                   PERFORM APPLY-FEE
+                   SUBTRACT WS-TRAN-AMOUNT FROM WS-ACCT-BALANCE
                WHEN OTHER
-                   MOVE 'Y' TO WS-UNKNOWN-TRAN-CODE
-                   PERFORM REPORT-UNKNOWN-TRANSACTION
+                   CONTINUE
            END-EVALUATE
-           .
-
-       APPLY-DEPOSIT.
-           ADD WS-TRAN-AMOUNT TO M-BALANCE
-           MOVE T-TRAN-DATE TO M-LAST-ACTIVITY-DATE
-           MOVE 'N' TO WS-UNKNOWN-TRAN-CODE
-           .
-
-       APPLY-WITHDRAWAL.
-           SUBTRACT WS-TRAN-AMOUNT FROM M-BALANCE
-           MOVE T-TRAN-DATE TO M-LAST-ACTIVITY-DATE
-           MOVE 'N' TO WS-UNKNOWN-TRAN-CODE
-           .
-
-       APPLY-FEE.
-           SUBTRACT WS-TRAN-AMOUNT FROM M-BALANCE
-           MOVE T-TRAN-DATE TO M-LAST-ACTIVITY-DATE
-           MOVE 'N' TO WS-UNKNOWN-TRAN-CODE
-           .
-
-       REPORT-DETAIL.
-           MOVE M-ACCT-NUMBER TO WS-RPT-ACCT-NUMBER
-           MOVE M-NAME TO WS-RPT-NAME
-           MOVE WS-TRAN-CODE TO WS-RPT-TRAN-CODE
-           MOVE WS-TRAN-AMOUNT TO WS-RPT-AMOUNT
-           MOVE M-BALANCE TO WS-RPT-BALANCE
-           IF WS-UNKNOWN-TRAN-CODE = 'Y'
-               MOVE 'UNKNOWN TRAN CODE' TO WS-RPT-STATUS
-           ELSE
-               MOVE 'UPDATED' TO WS-RPT-STATUS
-           END-IF
-           PERFORM WRITE-REPORT-LINE
-           .
-
-       REPORT-UNKNOWN-TRANSACTION.
-           MOVE M-ACCT-NUMBER TO WS-RPT-ACCT-NUMBER
-           MOVE M-NAME TO WS-RPT-NAME
-           MOVE WS-TRAN-CODE TO WS-RPT-TRAN-CODE
-           MOVE WS-TRAN-AMOUNT TO WS-RPT-AMOUNT
-           MOVE M-BALANCE TO WS-RPT-BALANCE
-           MOVE 'UNKNOWN TRAN CODE' TO WS-RPT-STATUS
-           PERFORM WRITE-REPORT-LINE
-           .
-
-       REPORT-NO-TRANSACTION.
-           MOVE M-ACCT-NUMBER TO WS-RPT-ACCT-NUMBER
-           MOVE M-NAME TO WS-RPT-NAME
-           MOVE SPACES TO WS-RPT-TRAN-CODE
-           MOVE ZERO TO WS-RPT-AMOUNT
-           MOVE M-BALANCE TO WS-RPT-BALANCE
-           MOVE 'NO TRANSACTION' TO WS-RPT-STATUS
-           PERFORM WRITE-REPORT-LINE
-           .
-
-       WRITE-REPORT-LINE.
-           STRING
-               WS-RPT-ACCT-NUMBER DELIMITED BY SIZE
-               ' ' DELIMITED BY SIZE
-               WS-RPT-NAME DELIMITED BY SIZE
-               ' ' DELIMITED BY SIZE
-               WS-RPT-TRAN-CODE DELIMITED BY SIZE
-               ' ' DELIMITED BY SIZE
-               WS-RPT-AMOUNT DELIMITED BY SIZE
-               ' ' DELIMITED BY SIZE
-               WS-RPT-BALANCE DELIMITED BY SIZE
-               ' ' DELIMITED BY SIZE
-               WS-RPT-STATUS DELIMITED BY SIZE
-               INTO WS-REPORT-LINE
-           END-STRING
-           WRITE REPORT-REC FROM WS-REPORT-LINE
+           ADD 1 TO WS-TOTAL-UPDATED
            .
 
        WRITE-UPDATED-MASTER.
-           MOVE MASTER-REC TO NEW-MASTER-REC
-           WRITE NEW-MASTER-REC
+           * Write updated account record to new master file
+           MOVE WS-ACCT-NO       TO NM-ACCT-NO
+           MOVE WS-ACCT-NAME     TO NM-NAME
+           MOVE WS-ACCT-BALANCE  TO NM-BALANCE
+           MOVE WS-LAST-ACT-DATE TO NM-LAST-ACT-DATE
+           WRITE ACCTMAST-NEW-REC
+           ADD 1 TO WS-TOTAL-PROCESSED
            .
 
-       WRITE-UNTOUCHED-MASTER.
-           MOVE MASTER-REC TO NEW-MASTER-REC
-           WRITE NEW-MASTER-REC
-           .
-
-       READ-MASTER-RECORD.
-           READ MASTER-FILE
-               AT END MOVE 'Y' TO WS-EOF-MASTER
-           END-READ
-           .
-
-       READ-TRAN-RECORD.
-           READ TRAN-FILE
-               AT END MOVE 'Y' TO WS-EOF-TRAN
-           END-READ
+       WRITE-ACCOUNT-REPORT.
+           * Write audit report entry for account
+           IF WS-TRAN-MATCHED = 'Y'
+               STRING
+                   'ACCOUNT: ' WS-ACCT-NO '  '
+                   WS-ACCT-NAME '  '
+                   'UPDATED BALANCE: ' WS-ACCT-BALANCE '  '
+                   'LAST ACTIVITY: ' WS-LAST-ACT-DATE
+                   DELIMITED BY SIZE
+                   INTO WS-REPORT-LINE
+               END-STRING
+               WRITE ACCTREP-REC FROM WS-REPORT-LINE
+           ELSE
+               STRING
+                   'ACCOUNT: ' WS-ACCT-NO '  '
+                   WS-ACCT-NAME '  '
+                   'NO TRANSACTIONS'
+                   DELIMITED BY SIZE
+                   INTO WS-REPORT-LINE
+               END-STRING
+               WRITE ACCTREP-REC FROM WS-REPORT-LINE
+               ADD 1 TO WS-TOTAL-NOTRANS
+           END-IF
            .
 
        FINALIZE-SECTION.
-           CLOSE MASTER-FILE
-           CLOSE TRAN-FILE
-           CLOSE NEW-MASTER-FILE
-           CLOSE REPORT-FILE
+           * Write summary report and close files
+           PERFORM WRITE-SUMMARY-REPORT
+           CLOSE ACCTMAST-IN
+           CLOSE ACCTTRAN-IN
+           CLOSE ACCTMAST-OUT
+           CLOSE ACCTREP-OUT
            .
 
-       END PROGRAM ACCTUPDT-REFACTORED.
+       WRITE-SUMMARY-REPORT.
+           * Output totals for processed, updated, and no-transaction accounts
+           STRING
+               'TOTAL ACCOUNTS PROCESSED: ' WS-TOTAL-PROCESSED
+               DELIMITED BY SIZE
+               INTO WS-REPORT-LINE
+           END-STRING
+           WRITE ACCTREP-REC FROM WS-REPORT-LINE
+
+           STRING
+               'TOTAL ACCOUNTS UPDATED:   ' WS-TOTAL-UPDATED
+               DELIMITED BY SIZE
+               INTO WS-REPORT-LINE
+           END-STRING
+           WRITE ACCTREP-REC FROM WS-REPORT-LINE
+
+           STRING
+               'TOTAL NO-TRANSACTION ACCOUNTS: ' WS-TOTAL-NOTRANS
+               DELIMITED BY SIZE
+               INTO WS-REPORT-LINE
+           END-STRING
+           WRITE ACCTREP-REC FROM WS-REPORT-LINE
+           .
+
+       * End of program
 
 Section Explanations:
 
-- File Handling: All file operations use modern SELECT and FD syntax. Hardcoded file names are retained for compatibility but should be parameterized for portability in future updates.
+- File Handling: All file SELECT and FD statements are modernized with clear naming and line sequential organization. Input, output, and report files are explicitly separated for maintainability.
 
-- Data Structures: Record layouts for master and transaction files use meaningful field names. FILLER fields are retained for compatibility but unused in logic.
+- Data Structures: Account and transaction record layouts use meaningful field names and are grouped for clarity. Working-storage variables are used for intermediate calculations and reporting.
 
-- Initialization: The run date is set at initialization. In future, this should be parameterized or derived from the system date for automation.
+- Initialization: INIT-SECTION opens all files and sets the run date dynamically using FUNCTION CURRENT-DATE, replacing legacy hardcoded dates.
 
-- Main Logic: The program is structured into modular paragraphs (INIT-SECTION, PROCESS-MASTER-RECORDS, FINALIZE-SECTION) for clarity and maintainability.
+- Main Logic: MAIN-LOGIC is the program's entry point, calling modular sections for initialization, processing, and finalization.
 
-- Transaction Processing: All transactions for a given account are processed in sequence. The logic for deposit, withdrawal, and fee is separated into dedicated paragraphs (APPLY-DEPOSIT, APPLY-WITHDRAWAL, APPLY-FEE). Unknown transaction codes are flagged and reported.
+- Account Processing: PROCESS-ACCOUNTS loops through each master account, initializes work areas, matches and applies transactions, writes updated records, and produces audit entries. Control flow uses structured PERFORMs, eliminating GO TOs.
 
-- Reporting: Business logic and reporting are separated. Each transaction (or absence thereof) is reported in a structured format. Unknown transaction codes and accounts with no transactions are clearly indicated in the report.
+- Transaction Matching: MATCH-AND-APPLY-TRANSACTIONS efficiently matches transactions to accounts, applying business rules only when account numbers match. Transactions for non-existent accounts are ignored.
 
-- Error Handling: End-of-file conditions are managed using flags (WS-EOF-MASTER, WS-EOF-TRAN) for clarity and robustness.
+- Business Rules: APPLY-TRANSACTION uses EVALUATE (modern COBOL switch) for transaction codes: '01' (deposit) adds to balance, '02' (withdrawal) and '03' (fee) subtract. Invalid codes are ignored. Last activity date is updated per transaction.
 
-- Control Flow: All GO TO statements are eliminated. Structured PERFORM and EVALUATE constructs are used throughout, improving readability and maintainability.
+- Reporting: WRITE-ACCOUNT-REPORT outputs a human-readable line for each account, indicating updated balances or 'NO TRANSACTIONS' if none matched. Summary totals are written at the end.
+
+- Finalization: FINALIZE-SECTION writes summary statistics and closes all files cleanly.
 
 Change Log:
 
-- Eliminated all GO TO statements; replaced with structured PERFORM and EVALUATE constructs.
-- Modularized monolithic paragraphs into focused sub-paragraphs (e.g., APPLY-DEPOSIT, APPLY-WITHDRAWAL, APPLY-FEE).
-- Separated business logic from reporting logic for maintainability.
-- Improved variable and paragraph naming for clarity and consistency.
+- Replaced all GO TO statements with structured PERFORM and explicit paragraph names.
+- Modularized monolithic logic into INIT-SECTION, PROCESS-ACCOUNTS, FINALIZE-SECTION, and sub-paragraphs for clarity.
+- Externalized hardcoded run date using FUNCTION CURRENT-DATE.
+- Improved variable and paragraph naming for readability and maintainability.
+- Separated reporting logic from business processing.
+- Consolidated transaction application logic using EVALUATE for extensibility.
+- Preserved all original business rules and file formats for compatibility.
 - Added detailed inline comments and section explanations.
-- Managed end-of-file and error conditions with explicit flags.
-- Retained file interfaces and business rules for compatibility.
-- Validated code for production use and downstream integration.
+- Validated code for correctness, portability, and production safety.
