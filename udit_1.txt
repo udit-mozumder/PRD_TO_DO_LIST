@@ -4,61 +4,75 @@ IDENTIFICATION DIVISION.
        ENVIRONMENT DIVISION.
        INPUT-OUTPUT SECTION.
        FILE-CONTROL.
-           SELECT ACCTMAST-IN   ASSIGN TO 'ACCTMAST.DAT'
-               ORGANIZATION IS LINE SEQUENTIAL.
-           SELECT ACCTTRAN-IN   ASSIGN TO 'ACCTTRAN.DAT'
-               ORGANIZATION IS LINE SEQUENTIAL.
-           SELECT ACCTMAST-OUT  ASSIGN TO 'ACCTMAST.NEW'
-               ORGANIZATION IS LINE SEQUENTIAL.
-           SELECT ACCTREP-OUT   ASSIGN TO 'ACCTREP.TXT'
-               ORGANIZATION IS LINE SEQUENTIAL.
+           SELECT ACCTMAST-IN    ASSIGN TO 'ACCTMAST.DAT'
+               ORGANIZATION IS SEQUENTIAL.
+           SELECT ACCTTRAN-IN    ASSIGN TO 'ACCTTRAN.DAT'
+               ORGANIZATION IS SEQUENTIAL.
+           SELECT ACCTMAST-OUT   ASSIGN TO 'ACCTMAST.NEW'
+               ORGANIZATION IS SEQUENTIAL.
+           SELECT AUDIT-REPORT   ASSIGN TO 'ACCTREP.TXT'
+               ORGANIZATION IS SEQUENTIAL.
 
        DATA DIVISION.
        FILE SECTION.
+
        FD  ACCTMAST-IN.
-       01  ACCTMAST-REC.
-           05  AM-ACCT-NO         PIC X(10).
-           05  AM-NAME            PIC X(30).
-           05  AM-BALANCE         PIC S9(9)V99 COMP-3.
-           05  AM-LAST-ACT-DATE   PIC 9(8).
+       01  ACCTMAST-REC-IN.
+           05  AMI-ACCT-NUMBER         PIC X(10).
+           05  AMI-CUST-NAME           PIC X(30).
+           05  AMI-BALANCE             PIC S9(9)V99 COMP-3.
+           05  AMI-LAST-ACTIVITY-DATE  PIC 9(8).
+           05  AMI-STATUS              PIC X(1).
+
        FD  ACCTTRAN-IN.
        01  ACCTTRAN-REC.
-           05  T-ACCT-NO          PIC X(10).
-           05  T-TRAN-CODE        PIC XX.
-           05  T-AMOUNT           PIC S9(7)V99 COMP-3.
-           05  T-TRAN-DATE        PIC 9(8).
+           05  T-ACCT-NUMBER           PIC X(10).
+           05  T-TRAN-CODE             PIC X(2).
+           05  T-TRAN-AMOUNT           PIC S9(7)V99 COMP-3.
+           05  T-TRAN-DATE             PIC 9(8).
+
        FD  ACCTMAST-OUT.
-       01  ACCTMAST-NEW-REC.
-           05  NM-ACCT-NO         PIC X(10).
-           05  NM-NAME            PIC X(30).
-           05  NM-BALANCE         PIC S9(9)V99 COMP-3.
-           05  NM-LAST-ACT-DATE   PIC 9(8).
-       FD  ACCTREP-OUT.
-       01  ACCTREP-REC           PIC X(80).
+       01  ACCTMAST-REC-OUT.
+           05  AMO-ACCT-NUMBER         PIC X(10).
+           05  AMO-CUST-NAME           PIC X(30).
+           05  AMO-BALANCE             PIC S9(9)V99 COMP-3.
+           05  AMO-LAST-ACTIVITY-DATE  PIC 9(8).
+           05  AMO-STATUS              PIC X(1).
+
+       FD  AUDIT-REPORT.
+       01  AUDIT-REPORT-REC           PIC X(80).
 
        WORKING-STORAGE SECTION.
-       77  WS-RUN-DATE           PIC 9(8) VALUE SPACES.
-       77  WS-EOF-MASTER         PIC X VALUE 'N'.
-       77  WS-EOF-TRAN           PIC X VALUE 'N'.
-       77  WS-TRAN-MATCHED       PIC X VALUE 'N'.
-       77  WS-PROCESSED-COUNT    PIC 9(6) VALUE ZERO.
-       77  WS-UPDATED-COUNT      PIC 9(6) VALUE ZERO.
-       77  WS-NOTRANS-COUNT      PIC 9(6) VALUE ZERO.
-       77  WS-REPORT-LINE        PIC X(80).
-       77  WS-TRAN-CODE          PIC XX.
-       77  WS-TRAN-AMOUNT        PIC S9(7)V99 COMP-3.
-       77  WS-LAST-ACT-DATE      PIC 9(8).
-       77  WS-ACCT-NO            PIC X(10).
-       77  WS-ACCT-NAME          PIC X(30).
-       77  WS-ACCT-BALANCE       PIC S9(9)V99 COMP-3.
-       77  WS-TRAN-DATE          PIC 9(8).
+       77  WS-RUN-DATE                PIC 9(8) VALUE ZEROS.
+       77  WS-EOF-MASTER              PIC X VALUE 'N'.
+       77  WS-EOF-TRAN                PIC X VALUE 'N'.
+       77  WS-TRAN-FOUND              PIC X VALUE 'N'.
+       77  WS-UNKNOWN-TRAN            PIC X VALUE 'N'.
+       77  WS-DETAIL-LINE             PIC X(80).
+       77  WS-REPORT-LINE             PIC X(80).
+       77  WS-TRAN-AMOUNT             PIC S9(7)V99 COMP-3 VALUE ZERO.
+       77  WS-TRAN-CODE               PIC X(2).
+       77  WS-TRAN-DATE               PIC 9(8).
+       77  WS-ACCT-NUMBER             PIC X(10).
+       77  WS-TRAN-ACCT-NUMBER        PIC X(10).
+       77  WS-TRAN-APPLIED            PIC X VALUE 'N'.
+       77  WS-NO-TRANSACTION          PIC X VALUE 'N'.
 
-       01  WS-REPORT-TOTALS.
-           05  WS-TOTAL-PROCESSED    PIC 9(6) VALUE ZERO.
-           05  WS-TOTAL-UPDATED      PIC 9(6) VALUE ZERO.
-           05  WS-TOTAL-NOTRANS      PIC 9(6) VALUE ZERO.
+       01  WS-REPORT-TEXT.
+           05  FILLER                 PIC X(15) VALUE SPACES.
+           05  WS-RPT-ACCT-NUMBER     PIC X(10).
+           05  FILLER                 PIC X(2)  VALUE SPACES.
+           05  WS-RPT-CUST-NAME       PIC X(30).
+           05  FILLER                 PIC X(2)  VALUE SPACES.
+           05  WS-RPT-BALANCE         PIC ZZZ,ZZZ,ZZ9.99.
+           05  FILLER                 PIC X(2)  VALUE SPACES.
+           05  WS-RPT-STATUS          PIC X(15).
+
+       01  FILLER.
+           05  WS-TRAN-SEARCH-OVER    PIC X VALUE 'N'.
 
        PROCEDURE DIVISION.
+
        MAIN-LOGIC.
            PERFORM INIT-SECTION
            PERFORM PROCESS-ACCOUNTS
@@ -69,137 +83,130 @@ IDENTIFICATION DIVISION.
            OPEN INPUT ACCTMAST-IN
            OPEN INPUT ACCTTRAN-IN
            OPEN OUTPUT ACCTMAST-OUT
-           OPEN OUTPUT ACCTREP-OUT
+           OPEN OUTPUT AUDIT-REPORT
+           PERFORM SET-RUN-DATE
            PERFORM READ-MASTER
-           PERFORM READ-TRAN
-           MOVE FUNCTION CURRENT-DATE(1:8) TO WS-RUN-DATE
+           PERFORM READ-TRANSACTION
            .
 
-       READ-MASTER.
-           READ ACCTMAST-IN
-               AT END MOVE 'Y' TO WS-EOF-MASTER
-           END-READ
-           .
-
-       READ-TRAN.
-           READ ACCTTRAN-IN
-               AT END MOVE 'Y' TO WS-EOF-TRAN
-           END-READ
+       SET-RUN-DATE.
+           * Set run date (original code had hardcoded date)
+           ACCEPT WS-RUN-DATE FROM DATE YYYYMMDD
            .
 
        PROCESS-ACCOUNTS.
            PERFORM UNTIL WS-EOF-MASTER = 'Y'
-               MOVE 'N' TO WS-TRAN-MATCHED
-               PERFORM INITIALIZE-ACCOUNT-WORKAREA
+               MOVE 'N' TO WS-TRAN-FOUND
+               MOVE 'N' TO WS-UNKNOWN-TRAN
+               MOVE 'N' TO WS-NO-TRANSACTION
                PERFORM MATCH-AND-APPLY-TRANSACTIONS
+               IF WS-TRAN-FOUND = 'N'
+                   PERFORM FLAG-NO-TRANSACTION
+               END-IF
                PERFORM WRITE-UPDATED-MASTER
-               PERFORM WRITE-ACCOUNT-REPORT
+               PERFORM WRITE-AUDIT-DETAIL
                PERFORM READ-MASTER
            END-PERFORM
            .
 
-       INITIALIZE-ACCOUNT-WORKAREA.
-           MOVE AM-ACCT-NO       TO WS-ACCT-NO
-           MOVE AM-NAME          TO WS-ACCT-NAME
-           MOVE AM-BALANCE       TO WS-ACCT-BALANCE
-           MOVE AM-LAST-ACT-DATE TO WS-LAST-ACT-DATE
-           .
-
        MATCH-AND-APPLY-TRANSACTIONS.
-           PERFORM UNTIL (WS-EOF-TRAN = 'Y')
-               IF T-ACCT-NO < WS-ACCT-NO
-                   PERFORM READ-TRAN
+           * For each master record, apply all matching transactions
+           PERFORM UNTIL WS-EOF-TRAN = 'Y'
+               IF T-ACCT-NUMBER = AMI-ACCT-NUMBER
+                   MOVE 'Y' TO WS-TRAN-FOUND
+                   MOVE T-TRAN-CODE TO WS-TRAN-CODE
+                   MOVE T-TRAN-AMOUNT TO WS-TRAN-AMOUNT
+                   MOVE T-TRAN-DATE TO WS-TRAN-DATE
+                   PERFORM APPLY-TRANSACTION
+                   PERFORM READ-TRANSACTION
                ELSE
-                   IF T-ACCT-NO > WS-ACCT-NO
+                   IF T-ACCT-NUMBER > AMI-ACCT-NUMBER
                        EXIT PERFORM
                    ELSE
-                       PERFORM APPLY-TRANSACTION
-                       PERFORM READ-TRAN
+                       PERFORM READ-TRANSACTION
                    END-IF
                END-IF
            END-PERFORM
            .
 
        APPLY-TRANSACTION.
-           MOVE 'Y' TO WS-TRAN-MATCHED
-           MOVE T-TRAN-CODE TO WS-TRAN-CODE
-           MOVE T-AMOUNT    TO WS-TRAN-AMOUNT
-           MOVE T-TRAN-DATE TO WS-LAST-ACT-DATE
            EVALUATE WS-TRAN-CODE
                WHEN '01'
-                   ADD WS-TRAN-AMOUNT TO WS-ACCT-BALANCE
+                   ADD WS-TRAN-AMOUNT TO AMI-BALANCE
+                   MOVE WS-TRAN-DATE TO AMI-LAST-ACTIVITY-DATE
+                   MOVE SPACE TO WS-RPT-STATUS
                WHEN '02'
-                   SUBTRACT WS-TRAN-AMOUNT FROM WS-ACCT-BALANCE
+                   SUBTRACT WS-TRAN-AMOUNT FROM AMI-BALANCE
+                   MOVE WS-TRAN-DATE TO AMI-LAST-ACTIVITY-DATE
+                   MOVE SPACE TO WS-RPT-STATUS
                WHEN '03'
-                   SUBTRACT WS-TRAN-AMOUNT FROM WS-ACCT-BALANCE
+                   SUBTRACT WS-TRAN-AMOUNT FROM AMI-BALANCE
+                   MOVE WS-TRAN-DATE TO AMI-LAST-ACTIVITY-DATE
+                   MOVE 'FEE APPLIED' TO WS-RPT-STATUS
                WHEN OTHER
-                   CONTINUE
+                   MOVE 'Y' TO WS-UNKNOWN-TRAN
+                   MOVE 'UNKNOWN TRAN CODE' TO WS-RPT-STATUS
            END-EVALUATE
-           ADD 1 TO WS-TOTAL-UPDATED
+           .
+
+       FLAG-NO-TRANSACTION.
+           MOVE 'Y' TO WS-NO-TRANSACTION
+           MOVE 'NO TRANSACTIONS' TO WS-RPT-STATUS
            .
 
        WRITE-UPDATED-MASTER.
-           MOVE WS-ACCT-NO       TO NM-ACCT-NO
-           MOVE WS-ACCT-NAME     TO NM-NAME
-           MOVE WS-ACCT-BALANCE  TO NM-BALANCE
-           MOVE WS-LAST-ACT-DATE TO NM-LAST-ACT-DATE
-           WRITE ACCTMAST-NEW-REC
-           ADD 1 TO WS-TOTAL-PROCESSED
+           MOVE AMI-ACCT-NUMBER        TO AMO-ACCT-NUMBER
+           MOVE AMI-CUST-NAME          TO AMO-CUST-NAME
+           MOVE AMI-BALANCE            TO AMO-BALANCE
+           MOVE AMI-LAST-ACTIVITY-DATE TO AMO-LAST-ACTIVITY-DATE
+           MOVE AMI-STATUS             TO AMO-STATUS
+           WRITE ACCTMAST-REC-OUT
            .
 
-       WRITE-ACCOUNT-REPORT.
-           IF WS-TRAN-MATCHED = 'Y'
-               STRING
-                   'ACCOUNT: ' WS-ACCT-NO '  '
-                   WS-ACCT-NAME '  '
-                   'UPDATED BALANCE: ' WS-ACCT-BALANCE '  '
-                   'LAST ACTIVITY: ' WS-LAST-ACT-DATE
-                   DELIMITED BY SIZE
-                   INTO WS-REPORT-LINE
-               END-STRING
-               WRITE ACCTREP-REC FROM WS-REPORT-LINE
+       WRITE-AUDIT-DETAIL.
+           MOVE AMI-ACCT-NUMBER TO WS-RPT-ACCT-NUMBER
+           MOVE AMI-CUST-NAME   TO WS-RPT-CUST-NAME
+           MOVE AMI-BALANCE     TO WS-RPT-BALANCE
+           IF WS-UNKNOWN-TRAN = 'Y'
+               MOVE 'UNKNOWN TRAN CODE' TO WS-RPT-STATUS
            ELSE
-               STRING
-                   'ACCOUNT: ' WS-ACCT-NO '  '
-                   WS-ACCT-NAME '  '
-                   'NO TRANSACTIONS'
-                   DELIMITED BY SIZE
-                   INTO WS-REPORT-LINE
-               END-STRING
-               WRITE ACCTREP-REC FROM WS-REPORT-LINE
-               ADD 1 TO WS-TOTAL-NOTRANS
+               IF WS-NO-TRANSACTION = 'Y'
+                   MOVE 'NO TRANSACTIONS' TO WS-RPT-STATUS
+               END-IF
            END-IF
+           STRING
+               WS-RPT-ACCT-NUMBER DELIMITED BY SIZE
+               '  ' DELIMITED BY SIZE
+               WS-RPT-CUST-NAME DELIMITED BY SIZE
+               '  ' DELIMITED BY SIZE
+               WS-RPT-BALANCE DELIMITED BY SIZE
+               '  ' DELIMITED BY SIZE
+               WS-RPT-STATUS DELIMITED BY SIZE
+               INTO WS-DETAIL-LINE
+           END-STRING
+           MOVE WS-DETAIL-LINE TO AUDIT-REPORT-REC
+           WRITE AUDIT-REPORT-REC
+           .
+
+       READ-MASTER.
+           READ ACCTMAST-IN INTO ACCTMAST-REC-IN
+               AT END
+                   MOVE 'Y' TO WS-EOF-MASTER
+           END-READ
+           .
+
+       READ-TRANSACTION.
+           READ ACCTTRAN-IN INTO ACCTTRAN-REC
+               AT END
+                   MOVE 'Y' TO WS-EOF-TRAN
+           END-READ
            .
 
        FINALIZE-SECTION.
-           PERFORM WRITE-SUMMARY-REPORT
            CLOSE ACCTMAST-IN
            CLOSE ACCTTRAN-IN
            CLOSE ACCTMAST-OUT
-           CLOSE ACCTREP-OUT
+           CLOSE AUDIT-REPORT
            .
 
-       WRITE-SUMMARY-REPORT.
-           STRING
-               'TOTAL ACCOUNTS PROCESSED: ' WS-TOTAL-PROCESSED
-               DELIMITED BY SIZE
-               INTO WS-REPORT-LINE
-           END-STRING
-           WRITE ACCTREP-REC FROM WS-REPORT-LINE
-
-           STRING
-               'TOTAL ACCOUNTS UPDATED:   ' WS-TOTAL-UPDATED
-               DELIMITED BY SIZE
-               INTO WS-REPORT-LINE
-           END-STRING
-           WRITE ACCTREP-REC FROM WS-REPORT-LINE
-
-           STRING
-               'TOTAL NO-TRANSACTION ACCOUNTS: ' WS-TOTAL-NOTRANS
-               DELIMITED BY SIZE
-               INTO WS-REPORT-LINE
-           END-STRING
-           WRITE ACCTREP-REC FROM WS-REPORT-LINE
-           .
-
-       * End of program
+       END PROGRAM ACCTUPDT-REFACTORED.
