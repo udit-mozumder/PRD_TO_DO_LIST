@@ -1,0 +1,197 @@
+       IDENTIFICATION DIVISION.
+       PROGRAM-ID. ACCTUPDT-REFACTORED.
+
+       ENVIRONMENT DIVISION.
+       CONFIGURATION SECTION.
+       SOURCE-COMPUTER. IBM-370.
+       OBJECT-COMPUTER. IBM-370.
+
+       INPUT-OUTPUT SECTION.
+       FILE-CONTROL.
+           SELECT ACCTMAST-IN ASSIGN TO 'ACCTMAST.DAT'
+               ORGANIZATION IS SEQUENTIAL.
+           SELECT ACCTTRAN-IN ASSIGN TO 'ACCTTRAN.DAT'
+               ORGANIZATION IS SEQUENTIAL.
+           SELECT ACCTMAST-OUT ASSIGN TO 'ACCTMAST.NEW'
+               ORGANIZATION IS SEQUENTIAL.
+           SELECT AUDIT-REPORT ASSIGN TO 'ACCTREP.TXT'
+               ORGANIZATION IS SEQUENTIAL.
+
+       DATA DIVISION.
+       FILE SECTION.
+
+       FD  ACCTMAST-IN.
+       01  ACCTMAST-REC.
+           05  AM-ACCT-NUM        PIC 9(10).
+           05  AM-CUST-NAME       PIC X(30).
+           05  AM-OLD-BAL         PIC S9(9)V99 COMP-3.
+
+       FD  ACCTTRAN-IN.
+       01  ACCTTRAN-REC.
+           05  AT-ACCT-NUM        PIC 9(10).
+           05  AT-TRAN-CODE       PIC 99.
+           05  AT-TRAN-AMT        PIC S9(7)V99 COMP-3.
+
+       FD  ACCTMAST-OUT.
+       01  ACCTMAST-NEW-REC.
+           05  AN-ACCT-NUM        PIC 9(10).
+           05  AN-CUST-NAME       PIC X(30).
+           05  AN-NEW-BAL         PIC S9(9)V99 COMP-3.
+
+       FD  AUDIT-REPORT.
+       01  AUDIT-REPORT-REC      PIC X(80).
+
+       WORKING-STORAGE SECTION.
+
+       77  WS-RUN-DATE           PIC 9(8) VALUE ZEROS.
+       77  WS-EOF-MASTER         PIC X VALUE 'N'.
+       77  WS-EOF-TRAN           PIC X VALUE 'N'.
+
+       77  WS-TOTAL-ACCOUNTS     PIC 9(6) VALUE ZEROS.
+       77  WS-UPDATED-ACCOUNTS   PIC 9(6) VALUE ZEROS.
+       77  WS-NO-TRAN-ACCOUNTS   PIC 9(6) VALUE ZEROS.
+
+       01  WS-TRANSACTION-FOUND  PIC X VALUE 'N'.
+       01  WS-NEW-BALANCE        PIC S9(9)V99 COMP-3 VALUE ZEROS.
+       01  WS-REPORT-MSG         PIC X(30) VALUE SPACES.
+
+       01  WS-TRANSACTION-TABLE.
+           05  WS-TRAN-ACCT-NUM  PIC 9(10).
+           05  WS-TRAN-CODE      PIC 99.
+           05  WS-TRAN-AMT       PIC S9(7)V99 COMP-3.
+
+       01  WS-REPORT-LINE.
+           05  RL-ACCT-NUM       PIC 9(10).
+           05  RL-CUST-NAME      PIC X(30).
+           05  RL-OLD-BAL        PIC $$$,$$$,$$9.99.
+           05  RL-NEW-BAL        PIC $$$,$$$,$$9.99.
+           05  RL-TRAN-AMT       PIC $$$,$$9.99.
+           05  RL-MSG            PIC X(30).
+
+       PROCEDURE DIVISION.
+
+       MAIN-LOGIC.
+           PERFORM INITIALIZATION
+           PERFORM PROCESS-ACCOUNTS
+           PERFORM FINALIZATION
+           STOP RUN.
+
+       INITIALIZATION.
+           OPEN INPUT ACCTMAST-IN
+           OPEN INPUT ACCTTRAN-IN
+           OPEN OUTPUT ACCTMAST-OUT
+           OPEN OUTPUT AUDIT-REPORT
+
+           MOVE FUNCTION CURRENT-DATE(1:8) TO WS-RUN-DATE
+
+           PERFORM READ-MASTER
+           PERFORM READ-TRANSACTION
+
+           MOVE ZEROS TO WS-TOTAL-ACCOUNTS
+           MOVE ZEROS TO WS-UPDATED-ACCOUNTS
+           MOVE ZEROS TO WS-NO-TRAN-ACCOUNTS.
+
+       READ-MASTER.
+           READ ACCTMAST-IN
+               AT END MOVE 'Y' TO WS-EOF-MASTER.
+
+       READ-TRANSACTION.
+           READ ACCTTRAN-IN
+               AT END MOVE 'Y' TO WS-EOF-TRAN.
+
+       PROCESS-ACCOUNTS.
+           PERFORM UNTIL WS-EOF-MASTER = 'Y'
+               ADD 1 TO WS-TOTAL-ACCOUNTS
+               MOVE 'N' TO WS-TRANSACTION-FOUND
+               MOVE AM-OLD-BAL TO WS-NEW-BALANCE
+               MOVE SPACES TO WS-REPORT-MSG
+
+               PERFORM FIND-AND-APPLY-TRANSACTIONS
+
+               IF WS-TRANSACTION-FOUND = 'Y'
+                   ADD 1 TO WS-UPDATED-ACCOUNTS
+               ELSE
+                   ADD 1 TO WS-NO-TRAN-ACCOUNTS
+                   MOVE 'NO TRANSACTIONS' TO WS-REPORT-MSG
+               END-IF
+
+               PERFORM WRITE-UPDATED-MASTER
+               PERFORM WRITE-AUDIT-REPORT
+
+               PERFORM READ-MASTER
+           END-PERFORM.
+
+       FIND-AND-APPLY-TRANSACTIONS.
+           PERFORM UNTIL WS-EOF-TRAN = 'Y'
+               IF AT-ACCT-NUM = AM-ACCT-NUM
+                   MOVE 'Y' TO WS-TRANSACTION-FOUND
+                   EVALUATE AT-TRAN-CODE
+                       WHEN 01
+                           ADD AT-TRAN-AMT TO WS-NEW-BALANCE
+                           MOVE 'DEPOSIT' TO WS-REPORT-MSG
+                       WHEN 02
+                           SUBTRACT AT-TRAN-AMT FROM WS-NEW-BALANCE
+                           MOVE 'WITHDRAWAL' TO WS-REPORT-MSG
+                       WHEN 03
+                           SUBTRACT AT-TRAN-AMT FROM WS-NEW-BALANCE
+                           MOVE 'FEE' TO WS-REPORT-MSG
+                       WHEN OTHER
+                           MOVE 'UNKNOWN TRAN CODE' TO WS-REPORT-MSG
+                   END-EVALUATE
+
+                   PERFORM WRITE-AUDIT-REPORT-TRAN
+                   PERFORM READ-TRANSACTION
+               ELSE
+                   EXIT PERFORM
+               END-IF
+           END-PERFORM.
+
+       WRITE-UPDATED-MASTER.
+           MOVE AM-ACCT-NUM TO AN-ACCT-NUM
+           MOVE AM-CUST-NAME TO AN-CUST-NAME
+           MOVE WS-NEW-BALANCE TO AN-NEW-BAL
+           WRITE ACCTMAST-NEW-REC.
+
+       WRITE-AUDIT-REPORT.
+           MOVE AM-ACCT-NUM TO RL-ACCT-NUM
+           MOVE AM-CUST-NAME TO RL-CUST-NAME
+           MOVE AM-OLD-BAL TO RL-OLD-BAL
+           MOVE WS-NEW-BALANCE TO RL-NEW-BAL
+           MOVE ZERO TO RL-TRAN-AMT
+           MOVE WS-REPORT-MSG TO RL-MSG
+           PERFORM FORMAT-REPORT-LINE
+           WRITE AUDIT-REPORT-REC FROM WS-REPORT-LINE.
+
+       WRITE-AUDIT-REPORT-TRAN.
+           MOVE AT-ACCT-NUM TO RL-ACCT-NUM
+           MOVE AM-CUST-NAME TO RL-CUST-NAME
+           MOVE AM-OLD-BAL TO RL-OLD-BAL
+           MOVE WS-NEW-BALANCE TO RL-NEW-BAL
+           MOVE AT-TRAN-AMT TO RL-TRAN-AMT
+           MOVE WS-REPORT-MSG TO RL-MSG
+           PERFORM FORMAT-REPORT-LINE
+           WRITE AUDIT-REPORT-REC FROM WS-REPORT-LINE.
+
+       FORMAT-REPORT-LINE.
+           * Format balances and amounts for display
+           * (Assumes custom formatting logic or built-in function)
+
+       FINALIZATION.
+           PERFORM WRITE-SUMMARY-REPORT
+           CLOSE ACCTMAST-IN
+           CLOSE ACCTTRAN-IN
+           CLOSE ACCTMAST-OUT
+           CLOSE AUDIT-REPORT.
+
+       WRITE-SUMMARY-REPORT.
+           MOVE SPACES TO AUDIT-REPORT-REC
+           STRING 'TOTAL ACCOUNTS: ' DELIMITED BY SIZE
+                  WS-TOTAL-ACCOUNTS DELIMITED BY SIZE
+                  '  UPDATED: ' DELIMITED BY SIZE
+                  WS-UPDATED-ACCOUNTS DELIMITED BY SIZE
+                  '  NO TRANSACTIONS: ' DELIMITED BY SIZE
+                  WS-NO-TRAN-ACCOUNTS DELIMITED BY SIZE
+                  INTO AUDIT-REPORT-REC
+           WRITE AUDIT-REPORT-REC.
+
+       END PROGRAM ACCTUPDT-REFACTORED.
